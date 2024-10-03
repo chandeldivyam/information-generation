@@ -1,7 +1,7 @@
 # app/schemas/document.py
 
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class DocumentCreate(BaseModel):
     content: str
@@ -10,10 +10,15 @@ class DocumentCreate(BaseModel):
     source_file_path: str
     source_document_id: str
     part_number: int
-    embedding: List[float]
 
 class DocumentSearch(BaseModel):
     organization_id: str
+    query: str
+
+class RelevantDocumentResponse(BaseModel):
+    content: str
+    metadata: Dict[str, Any]
+    relevance_score: float
 
 class DocumentUploadResponse(BaseModel):
     task_id: str

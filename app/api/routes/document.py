@@ -3,12 +3,23 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks
 from app.services.document_ingestion import DocumentIngestionService
 from app.services.vector_db import VectorDBService
-from app.schemas.document import DocumentSearch, TaskStatusResponse, DocumentUploadResponse
+from app.schemas.document import DocumentSearch, TaskStatusResponse, DocumentUploadResponse, RelevantDocumentResponse
 from app.core.celery_app import celery_app
 from celery.exceptions import TimeoutError
 import tempfile
 import os
 import uuid
+from langchain_cohere import CohereRerank
+from langchain.schema import Document
+from app.core.config import settings
+
+from app.core.exceptions import AppException
+from app.core.logging_config import logging
+from typing import List
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
 
 router = APIRouter()
 
@@ -41,15 +52,72 @@ async def upload_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/documents/search")
-async def search_documents(
+@router.post("/documents/relevant", response_model=List[Document])
+async def get_relevant_documents(
     search_params: DocumentSearch,
     vector_db_service: VectorDBService = Depends()
 ):
-    results = await vector_db_service.search_documents(
-        search_params.organization_id,
-    )
-    return results
+    try:
+        logger.info(f"Searching for relevant documents with query: {search_params.query}")
+        
+        # Fetch initial results from vector store
+        results = await vector_db_service.search_documents(
+            search_params.organization_id,
+            search_params.query,
+            k=10  # Fetch top 10 results initially
+        )
+        
+        if not results:
+            logger.info("No documents found in initial search")
+            return []
+
+        # Initialize CohereRerank
+        try:
+            os.environ["COHERE_API_KEY"] = settings.COHERE_API_KEY
+            cohere_client = CohereRerank(model="rerank-english-v2.0")
+        except Exception as e:
+            logger.error(f"Failed to initialize CohereRerank: {str(e)}")
+            raise AppException(status_code=500, detail="Failed to initialize reranking service")
+
+        # Prepare documents for reranking
+        documents = [doc.page_content for doc in results]
+        
+        # Perform reranking
+        try:
+            reranked_results = cohere_client.rerank(
+                documents=documents,
+                query=search_params.query,
+                top_n=5  # Return top 5 most relevant results
+            )
+        except Exception as e:
+            logger.error(f"Reranking failed: {str(e)}")
+            raise AppException(status_code=500, detail="Document reranking failed")
+
+        # Prepare final response
+        try:    
+            final_docs = []
+            for item in reranked_results:
+                idx = item.get('index')
+                relevance_score = item.get('relevance_score')
+                if idx is None or relevance_score is None:
+                    logger.info(f"Continue due to missing index / relevance score")
+                    continue
+                doc = results[idx]
+                doc.metadata['relevance_score'] = relevance_score
+                if relevance_score > 0.15:
+                    final_docs.append(doc)
+
+            logger.info(f"Successfully retrieved and reranked {len(final_docs)} documents")
+            return final_docs
+        except Exception as e:
+            logger.error(f"Unexpected error in get_relevant_documents: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"{str(e)}")
+
+    except AppException as ae:
+        raise ae
+    except Exception as e:
+        logger.error(f"Unexpected error in get_relevant_documents: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
 @router.delete("/documents/{source_document_id}")
 async def delete_document(

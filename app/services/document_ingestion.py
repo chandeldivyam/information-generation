@@ -11,6 +11,7 @@ from unstructured_client import UnstructuredClient
 from unstructured_client.utils import BackoffStrategy, RetryConfig
 from app.core.config import settings
 from app.schemas.document import DocumentCreate
+from langchain.schema import Document
 import os
 
 class DocumentIngestionService:
@@ -44,7 +45,7 @@ class DocumentIngestionService:
             ),
         )
 
-    async def process_document(self, file_path: str, organization_id: str) -> List[DocumentCreate]:
+    async def process_document(self, file_path: str, organization_id: str) -> List[Document]:
         loader = UnstructuredLoader(
             file_path,
             partition_via_api=True,
@@ -62,21 +63,22 @@ class DocumentIngestionService:
         source_document_id = str(uuid.uuid4())
         
         for idx, chunk in enumerate(semantic_chunks):
-            doc = DocumentCreate(
-                content=f"Relevant Topics Covered: {keywords}\nContent: {chunk.page_content}",
-                organization_id=organization_id,
-                source_file_name=os.path.basename(file_path),
-                source_file_path=file_path, # TODO - We need s3 link here
-                source_document_id=source_document_id,
-                part_number=idx+1,
-                embedding=self.embeddings.embed_query(chunk.page_content)
+            doc = Document(
+                page_content=f"Relevant Topics Covered: {keywords}\nContent: {chunk.page_content}",
+                metadata={
+                    "organization_id": organization_id,
+                    "source_file_name": os.path.basename(file_path),
+                    "source_file_path": file_path, # TODO - We need s3 link here
+                    "source_document_id": source_document_id,
+                    "part_number": idx+1,
+                },
             )
             processed_docs.append(doc)
         
         return processed_docs
 
     async def extract_keywords(self, content: str) -> str:
-        prompt = f"""I am building a RAG based application and this is a document provided by the user. Can you please give me relevant keywords and topics being covered in the document? Please write everything in order and do not miss topics. Mention the most important headings being covered in the document which will help in retrieval later.
+        prompt = f"""I am building a RAG based application and this is a document provided by the user. Can you please give me topics being covered in the document? Please write everything in order and do not miss topics. Mention the most important headings being covered in the document which will help in retrieval later.
         Respond as a comma-separated string.
         {content}
         """

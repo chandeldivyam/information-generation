@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI
-from app.api.routes import organization, document
+from app.api.routes import organization, document, question_answer, chat
 from app.core.config import settings
 from app.core.logging_config import setup_logging
 from app.core.logging_config import logging
@@ -15,6 +15,8 @@ app = FastAPI(title=settings.APP_NAME, version=settings.VERSION)
 
 app.include_router(organization.router, prefix="/api/v1") 
 app.include_router(document.router, prefix="/api/v1")
+app.include_router(question_answer.router, prefix="/api/v1")
+app.include_router(chat.router, prefix="/api/v1")
 
 app.add_exception_handler(AppException, app_exception_handler)
 app.add_exception_handler(Exception, global_exception_handler)

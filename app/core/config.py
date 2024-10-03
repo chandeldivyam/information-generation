@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     UNSTRUCTURED_API_URL: str = "http://localhost:12012"
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    COHERE_API_KEY: str = "Your Cohere API Key"
 
     class Config:
         env_file = ".env"

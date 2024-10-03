@@ -8,6 +8,7 @@ langchain-community
 langchainhub
 langchain-chroma
 langchain-unstructured
+langchain-cohere
 langchain-experimental
 pypdf
 chromadb
