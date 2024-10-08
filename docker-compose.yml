@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  unstructured-api:
+    image: downloads.unstructured.io/unstructured-io/unstructured-api:latest
+    ports:
+      - "12012:8000"
+
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    volumes:
+      - ./vector_database:/chroma/chroma
+    ports:
+      - "8000:8000"
+
+  celery-worker:
+    build:
+      context: ./information-generation
+      dockerfile: Dockerfile
+    command: celery -A app.core.celery_app worker --loglevel=debug -Q document_processing
+    volumes:
+      - ./information-generation:/app
+    depends_on:
+      - redis
+
+  app:
+    build:
+      context: ./information-generation
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 5123 --reload
+    volumes:
+      - ./information-generation:/app
+    ports:
+      - "5123:5123"
+    depends_on:
+      - redis
+      - unstructured-api
+      - chroma
+      - celery-worker
