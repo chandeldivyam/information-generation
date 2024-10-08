@@ -4,37 +4,51 @@ services:
   redis:
     image: redis:latest
     ports:
-      - "6379:6379"
+      - "6380:6379"  # Host port 6380, container port 6379
 
   unstructured-api:
     image: downloads.unstructured.io/unstructured-io/unstructured-api:latest
     ports:
       - "12012:8000"
+    environment:
+      - UNSTRUCTURED_API_KEY=${UNSTRUCTURED_API_KEY}
 
   chroma:
     image: ghcr.io/chroma-core/chroma:latest
     volumes:
       - ./vector_database:/chroma/chroma
     ports:
-      - "8000:8000"
+      - "8123:8000"  # Changed back to 8000 on host to match your current setup
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
 
   celery-worker:
     build:
-      context: ./information-generation
+      context: .
       dockerfile: Dockerfile
     command: celery -A app.core.celery_app worker --loglevel=debug -Q document_processing
     volumes:
-      - ./information-generation:/app
+      - .:/app
     depends_on:
       - redis
+      - chroma
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - UNSTRUCTURED_API_KEY=${UNSTRUCTURED_API_KEY}
+      - UNSTRUCTURED_API_URL=http://unstructured-api:8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - COHERE_API_KEY=${COHERE_API_KEY}
+      - CHROME_DB_URI=http://chroma:8000
 
   app:
     build:
-      context: ./information-generation
+      context: .
       dockerfile: Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 5123 --reload
     volumes:
-      - ./information-generation:/app
+      - .:/app
     ports:
       - "5123:5123"
     depends_on:
@@ -42,3 +56,11 @@ services:
       - unstructured-api
       - chroma
       - celery-worker
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - UNSTRUCTURED_API_KEY=${UNSTRUCTURED_API_KEY}
+      - UNSTRUCTURED_API_URL=http://unstructured-api:8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - COHERE_API_KEY=${COHERE_API_KEY}
+      - CHROME_DB_URI=http://chroma:8000
